@@ -177,6 +177,7 @@ def StartMapConstruction(url: str, token: str, mapName: str) -> str:
         "token": token,
         "name": mapName,
         "preservePoses": True,
+        "dense": 0
     }
 
     json_data = json.dumps(data)
@@ -299,10 +300,22 @@ if __name__ == '__main__':
     # 4. Give a name for your map in map_name and input your Immersal Developer Token in token
     # 5. Run the script and go check Immersal Develop Portal if no errors were presented
 
-    url = 'https://api.immersal.com/'
-    token = 'your-token-here'
-    input_directory = 'path-to-map-images'
-    map_name = 'map-name'
+    # Immersal international server
+    url = 'https://api.immersal.com'
+    token = "your_token"
+
+    # Immersal China server
+    # url = 'https://immersal.hexagon.com.cn'
+    # token = "your_token"
+
+    # Path of the input directory, which is the root directory of Polycam export, which is the parant 
+    # directory of folder 'keyframes'
+    # e.g. /home/maolin/workspace/mapping-data-polycam/garden/Sep1at10-00AM
+    input_directory = "path_of_polycam_export"
+
+    # Your map name. Please note that the map name must consist of letters or numbers (A-Z/a-z/0-9), 
+    # and must not contain spaces or special characters (such as -, _, /, etc.).
+    map_name = "your_map_name"
 
     main(url, token, map_name, input_directory)
 
