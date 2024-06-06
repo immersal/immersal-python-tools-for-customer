@@ -130,11 +130,21 @@ def StartMapConstruction(url: str, token: str, mapName: str, preservePoses: bool
         "token": token,
         "name": mapName,
         "preservePoses": preservePoses,
+
+        # By increasing these value (usually 'featureCountMax' more feature will be extracted, but it will also generate bigger map.
         # "featureCount": 1024,
         # "featureCountMax": 8192,
-        # "featureFilter": 1,
+
+        # By setting to '1' would be benefitial for high-frequency feature environemnt such as greeneries. 
+        # "featureFilter": 0,
+
+        # By increasing this number, it will leave less point (but more reliable points) in the map, so that map size can get decreased. 
         # "trackLengthMin": 2,
+
+        # This parameter refer to the max distance of target object. You may adjust according to your environment.
         # "triangulationDistanceMax": 512
+
+        # by setting this parameter to 0, it will skip the dense map and glb file generation, which can make the map construction a lot faster.
         "dense": 0,
     }
 
@@ -184,7 +194,7 @@ def main(url: str, token: str, inputDirectory: str, mapName: str, preservePoses:
 
 if __name__ == '__main__':
 
-        # Immersal international server
+    # Immersal international server
     url = 'https://api.immersal.com'
     token = "your_token"
 
