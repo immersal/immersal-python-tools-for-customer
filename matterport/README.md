@@ -15,3 +15,5 @@ data = {
     "preservePoses": params.preservePoses,
 }
 ```
+
+Please refer to [Matterport Pipeline document](https://developers.immersal.com/docs/mapsmapping/advanced/metterport-pipeline/) for detail.
