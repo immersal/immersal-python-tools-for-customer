@@ -204,16 +204,18 @@ def do_decode(source_filename: str) -> None:
     print(f"encoded:\t{encoded_filename}")
 
 
-def do_decode(data: dict) -> None:
+def do_encode(data: dict) -> None:
     filename = encodeFilename(data)
     print(f"encoded:\t{filename}")
 
 
 if __name__ == '__main__':
     
+    # Decoding
     # source_filename = r"hxyz_0_1e_be114320_3e2b84c0_bea72966_44b6cff7_44b6cff7_4469fc02_44343e8f_3fb9b3b7_bfac0e01_3fd40caf_403ead9d9ad02f0f_405a0660bb03d173_407f3c5c20000000_nUx88b.png"
     # do_decode(source_filename)
 
+    # Encoding
     data = {
         "run": 1,
         "ih": 1,
@@ -231,4 +233,4 @@ if __name__ == '__main__':
         "longitude_ll": 0,
         "altitude_ll": 0
     }
-    do_decode(data)
+    do_encode(data)
