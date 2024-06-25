@@ -70,34 +70,17 @@ class MatterportImage:
             if (self.repNode.isDefined(att)):
                 print(f"{att}: {self.repNode[att].value()}")
         
-        if (self.repNode.isDefined("imageWidth")):
-            self.imageWidth = self.repNode["imageWidth"].value()
+        self.imageWidth = self.repNode["imageWidth"].value() if self.repNode.isDefined("imageWidth") else None
+        self.imageHeight = self.repNode["imageHeight"].value() if self.repNode.isDefined("imageHeight") else None
+        self.pixelWidth = self.repNode["pixelWidth"].value() if self.repNode.isDefined("pixelWidth") else None
+        self.pixelHeight = self.repNode["pixelHeight"].value() if self.repNode.isDefined("pixelHeight") else None
+        self.focalLength = self.repNode["focalLength"].value() if self.repNode.isDefined("focalLength") else None
+        self.principalPointX = self.repNode["principalPointX"].value() if self.repNode.isDefined("principalPointX") else None
+        self.principalPointY = self.repNode["principalPointY"].value() if self.repNode.isDefined("principalPointY") else None
 
-        if (self.repNode.isDefined("imageHeight")):
-            self.imageHeight = self.repNode["imageHeight"].value()
-
-        if (self.repNode.isDefined("pixelWidth")):
-            self.pixelWidth = self.repNode["pixelWidth"].value()
-
-        if (self.repNode.isDefined("pixelHeight")):
-            self.pixelHeight = self.repNode["pixelHeight"].value()
-
-        if (self.repNode.isDefined("focalLength")):
-            self.focalLength = self.repNode["focalLength"].value()
-
-        if (self.repNode.isDefined("principalPointX")):
-            self.principalPointX = self.repNode["principalPointX"].value()
-
-        if (self.repNode.isDefined("principalPointY")):
-            self.principalPointY = self.repNode["principalPointY"].value()
-
-        # sensor info
-                
-        if (self.node.isDefined("sensorVendor")):
-            self.sensorVendor = self.node["sensorVendor"].value()
-
-        if (self.node.isDefined("sensorModel")):
-            self.sensorModel = self.node["sensorModel"].value()
+        # sensor info                
+        self.sensorVendor = self.node["sensorVendor"].value() if self.node.isDefined("sensorVendor") else None
+        self.sensorModel = self.node["sensorModel"].value() if self.node.isDefined("sensorModel") else None
 
     def writeImageBytes(self, path: str):
         self.imageFilePath = f'{path}/{self.guid}.{self.imageFileExt}'
@@ -121,10 +104,10 @@ class MatterportImage:
                 "r20": self.rotationMatrix[2][0],
                 "r21": self.rotationMatrix[2][1],
                 "r22": self.rotationMatrix[2][2],
-                "fx": self.imageWidth * self.focalLength,
-                "fy": self.imageHeight * self.focalLength,
-                "ox": self.principalPointX,
-                "oy": self.principalPointY
+                "fx": self.imageWidth * self.focalLength if self.focalLength is not None else 0,
+                "fy": self.imageHeight * self.focalLength if self.focalLength is not None else 0,
+                "ox": self.principalPointX if self.principalPointX is not None else 0,
+                "oy": self.principalPointY if self.principalPointY is not None else 0
             }
 
             json_data = json.dumps(data, indent=4)
@@ -182,10 +165,12 @@ def unpack(input_path: str, separate_scans: bool = True, front_views_only: bool 
 
             nodes = {}
             if (front_views_only):
-                nodes[i+1] = data2d[i+1]
+                if i + 1 < count:
+                    nodes[i+1] = data2d[i+1]
             else:
                 for j in range(0, 6):
-                    nodes[i+j] = data2d[i+j]
+                    if i + j < count:
+                        nodes[i+j] = data2d[i+j]
 
             for k,v in nodes.items():
                 print(f"\nExtracting node: {k+1}/{count}")
