@@ -80,13 +80,29 @@ class MapConstructionParams:
     preservePoses: Optional[bool] = True
 
 def construct_map(params: MapConstructionParams) -> str:
+
+    """Returns any errors or the new map's id and size (number of images) on the Cloud Service as a JSON formatted string. Submits the map construction job for the images in the user's workspace.
+    preservePoses               Boolean to enable constraints input images' camera pose data as constraints. Speeds up map construction if input pose data is accurate
+    featureCount                Integer for the max amount of features per image. Increases the total amount of features in the map but also increases map filesize
+    featureCountMax             Maximum num of features extracted from image
+    featureFilter               Possible values 0 or 1, in scenes where there’s lots of unique details like grass, bushes, leaves, gravel etc we’d pick a lot of noisy details (high frequency features) as our top picks. These features were very hard to localize against. By using this parameter in map construction, it sorts the detected features based on size favoring large features (low frequency features). This seems to improve map construction and localization rate in high frequency environments.
+    trackLengthMin              This value represents the minimum number of images from which a feature point must originate to be kept in the map. The larger the number, the higher the reliability required for feature points, resulting in fewer points being retained and a smaller map. We usually start with a default value of 2 and gradually increase it (typically between 2 and 5), observing the success rate of positioning until it noticeably drops. At this point, the map has a sufficiently good positioning success rate while being as small as possible.
+    triangulationDistanceMax    This value represents the maximum distance to the target object for positioning, measured in meters. A value of 512 means that the system supports constructing a point cloud for an object up to 512 meters away. It's important to note that in triangulation, if your target object is far away, your baseline (the distance moved laterally) should be correspondingly increased, typically to 5%-10% of the distance. Otherwise, the point clouds for these distant objects will be unreliable. It is also important to note that sometimes constructing point clouds for distant objects is not a good idea because the accuracy of positioning decreases with distance. Therefore, you should adjust this parameter based on the actual scenario.
+    dense                       By setting this parameter to 0, it will skip the dense map and glb file generation, which can make the map construction a lot faster.
+    """
+
     complete_url = url + "/construct"
 
     data = {
         "token": token,
         "name": map_name,
-        "featureCount": params.featureCount,
         "preservePoses": params.preservePoses,
+        "featureCount": params.featureCount, #default: 1024
+        # "featureCountMax": 8192, #default: 8192,
+        # "featureFilter": 0, # default: 0
+        # "trackLengthMin": 2, #default: 2
+        # "triangulationDistanceMax": 512, # default: 512
+        "dense": 0, # default: 1
     }
 
     json_data = json.dumps(data)
