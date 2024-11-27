@@ -16,38 +16,28 @@ def parseSensors(soup: BeautifulSoup) -> List[dict]:
 
     for sensor in sensors:
         sensor_id = int(sensor.attrs.get("id"))
+        
+        # Check if calibration node exists
         calibration = sensor.find("calibration")
+        if calibration:
+            sensor_type = calibration.get("type")
+            resolution = calibration.find("resolution")
+            width = int(resolution.attrs.get("width"))
+            height = int(resolution.attrs.get("height"))
 
-        #sensor_type = calibration.get("type")
-        sensor_type = sensor.attrs.get("type")
-        
-        #resolution = calibration.find("resolution")
-        resolution = sensor.find("resolution")
-        
-        width = int(resolution.attrs.get("width"))
-        height = int(resolution.attrs.get("height"))
-
-        f = 0.0
-        cx = 0.0
-        cy = 0.0
-
-        try:
-            f = float(calibration.find("f").contents[0])
-            print(f)
-        except:
-            print(f'warning: focal length (f) found for sensor {sensor_id} not found, defaulting to {f}. Is the image spherical?')
-        try:
-            cx = float(calibration.find("cx").contents[0])
-        except:
-            print(f'warning: principal point offset (cx) found for sensor {sensor_id} not found, defaulting to {cx}. Is the image spherical?')
-        try:
-            cy = float(calibration.find("cy").contents[0])
-        except:
-            print(f'warning: principal point offset (cy) found for sensor {sensor_id} not found, defaulting to {cy}. Is the image spherical?')
+            f = float(calibration.find("f").contents[0]) if calibration.find("f") else 0.0
+            cx = float(calibration.find("cx").contents[0]) if calibration.find("cx") else 0.0
+            cy = float(calibration.find("cy").contents[0]) if calibration.find("cy") else 0.0
+        else:
+            sensor_type = sensor.get("type", "unknown")
+            resolution = sensor.find("resolution")
+            width = int(resolution.attrs.get("width")) if resolution else 0
+            height = int(resolution.attrs.get("height")) if resolution else 0
+            f, cx, cy = 0.0, 0.0, 0.0
 
         if sensor_type == 'spherical':
             data = {
-                "sensor_type" : sensor_type,
+                "sensor_type": sensor_type,
                 "sensor_id": sensor_id,
                 "width": width,
                 "height": height,
@@ -57,7 +47,7 @@ def parseSensors(soup: BeautifulSoup) -> List[dict]:
             }
         else:
             data = {
-                "sensor_type" : sensor_type,
+                "sensor_type": sensor_type,
                 "sensor_id": sensor_id,
                 "width": width,
                 "height": height,
@@ -67,7 +57,6 @@ def parseSensors(soup: BeautifulSoup) -> List[dict]:
             }
 
         print(f'fx, fy: {data["f"]}\nox: {data["ox"]}\noy: {data["oy"]}\n')
-
         sensorsList.append(data)
 
     print(f'sensors parsed, sensorsList:\n{sensorsList}\n')
@@ -249,9 +238,16 @@ def main(xml_filepath: str, input_images_directory: str) -> None:
                         "oy": oy,
                     }
 
-
                     json_path = os.path.join(input_images_directory, f"{os.path.splitext(filename)[0]}.json")
                     print(f'saving {json_path}')
+
+                    # read from existing json file if possible
+                    if os.path.exists(json_path):
+                        with open(json_path, "r") as infile:
+                            existing_data = json.load(infile)
+                            for key in ["altitude", "longitude", "latitude"]:
+                                if key in existing_data:
+                                    data[key] = existing_data[key]
 
                     with open(json_path, "w") as outfile:
                         pretty_print = json.dumps(data, indent=4)
