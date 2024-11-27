@@ -2,9 +2,13 @@ from typing import List, Union
 import os
 import concurrent.futures
 import json
-import re
+import math
+import random
+import copy
+import colorsys
 import numpy as np              # pip install numpy
 import cv2                      # pip install opencv-python
+import open3d as o3d            # pip install open3d
 import requests                 # pip install requests
 
 
@@ -38,8 +42,9 @@ class PolycamScanArchive():
 
         self.mesh_info_path = os.path.join(self.archive_path, "mesh_info.json")
 
-        self.cameras = [os.path.join(self.cameras_path, file) for file in os.listdir(self.cameras_path) if file.endswith(".json")]
-        self.images = [os.path.join(self.cameras_path, file) for file in os.listdir(self.images_path) if file.endswith(".jpg") or file.endswith(".png")]
+        # Sort the files after listing them to ensure order
+        self.cameras = sorted([os.path.join(self.cameras_path, file) for file in os.listdir(self.cameras_path) if file.endswith(".json")])
+        self.images = sorted([os.path.join(self.images_path, file) for file in os.listdir(self.images_path) if file.endswith(".jpg") or file.endswith(".png")])
         self.contains_data = self.contains_data()
 
         if self.contains_data:
@@ -142,6 +147,22 @@ class Keyframe():
             # extract rotation and position components from the final 4x4 transform matrix and flatten to lists
             self.position = T[:3,3:].flatten()
             self.rotation = T[:3,:3].flatten()
+
+
+def SetupVisualizer() -> o3d.visualization.Visualizer:
+
+    vis = o3d.visualization.Visualizer()
+    vis.create_window()
+
+    # hex 171A1F - Immersal dark blue
+    background_color = [23, 26, 31]
+    normalized_background_color = [c / 255.0 for c in background_color]
+
+    opt = vis.get_render_option()
+    opt.background_color = normalized_background_color
+    opt.point_size = 5
+
+    return vis
 
 
 def ClearWorkspace(url: str, token: str, deleteAnchor: bool=True) -> str:
@@ -258,19 +279,63 @@ def SubmitImage(url: str, token: str, keyframe_list: List[dict], index: int) -> 
     return r.text
 
 
-def ValidateMapName(input_name:str) -> bool:
-    match = re.compile(r'^[a-zA-Z0-9]+$')
-    if len(re.findall(match, input_name)) != 1 or len(input_name) < 3:
-        return False
-    return True
+def distanceBetween(a: List[float], b: List[float]) -> float:
+    return math.sqrt((a[0]-b[0]) ** 2 + (a[1]-b[1]) ** 2 + (a[2]-b[2]) ** 2)
 
 
+def meanPosition(input_positions: List[float]) -> List[float]:
+    mean_x = sum([p[0] for p in input_positions]) / float(len(input_positions))
+    mean_y = sum([p[1] for p in input_positions]) / float(len(input_positions))
+    mean_z = sum([p[2] for p in input_positions]) / float(len(input_positions))
 
-def main(url: str, token: str, map_name: str, input_directory: str, max_threads: int=4):
+    return [mean_x, mean_y, mean_z]
 
-    if not ValidateMapName(map_name):
-        print(f"invalid map name: {map_name}, must be 3 or more [a-zA-A0-9] characters")
-        return
+
+def split_to_groups(input_keyframes: list[Keyframe], k: int=1):
+    # https://en.wikipedia.org/wiki/K-means_clustering
+
+    centroids = {}
+
+    # initialize k random centroids
+    random_indices = random.sample(range(0, len(input_keyframes)), k)
+    for i, random_index in enumerate(random_indices):
+        centroids[i] = input_keyframes[random_index].position
+
+    groups = {}
+
+    # iterations should not be hardcoded
+    for i in range(0, 50):
+
+        g = {}
+        
+        for kf in input_keyframes:
+            p = kf.position
+            closest_centroid = 0
+            closest_distance = math.inf
+
+            for c in centroids:
+
+                dist = distanceBetween(p, centroids[c])
+
+                if dist < closest_distance:
+                    closest_distance = dist
+                    closest_centroid = c
+
+            if g.get(closest_centroid) == None:
+                g[closest_centroid] = [kf]
+            else:
+                g[closest_centroid].append(kf)
+
+
+        for c in centroids:
+            centroids[c] = meanPosition([kf.position for kf in g.get(c)])
+
+        groups = g
+
+    return groups, centroids
+
+
+def main(url: str, token: str, map_name: str, input_directory: str, skip_submission: bool=False, visualize_poses: bool=True, coordinate_frame_size: float=0.25, split_groups: int=1, max_threads: int=4):
 
     polycam_scan = PolycamScanArchive(input_directory)
 
@@ -284,20 +349,54 @@ def main(url: str, token: str, map_name: str, input_directory: str, max_threads:
         kf = Keyframe(c, polycam_scan)
         keyframes.append(kf)
 
-    # clear the user's workspace from all existing images
-    ClearWorkspace(url, token)
+    keyframe_groups, centroids = split_to_groups(keyframes, k=split_groups)
+
+    # you can skip the actual submission if you want to just visualize the splitting
+    if not skip_submission:
+        for g in keyframe_groups:
+            split_map_name = f"{map_name}_{str(g).zfill(3)}"
+            print(split_map_name)
+
+            # clear the workspace, submit all images from Polycam scan, start map construction
+            ClearWorkspace(url, token)
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
+                results = [executor.submit(SubmitImage, url, token, keyframe_groups[g], i) for i in range(0, len(keyframe_groups[g]))]
+
+                for f in concurrent.futures.as_completed(results):
+                    print(f.result())
+
+            StartMapConstruction(url, token, split_map_name)
+            print(f"Map {split_map_name} submitted to Immersal Cloud Service")
 
 
-    # submit all images from Polycam scan
-    with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-        results = [executor.submit(SubmitImage, url, token, keyframes, i) for i in range(0, len(keyframes))]
+    # additional image pose visualization for debugging
+    if visualize_poses:
+        vis = SetupVisualizer()
 
-        for f in concurrent.futures.as_completed(results):
-            print(f.result())
+        for c in centroids.values():
+            mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=[0, 0, 0])
+            mesh.translate(c)
+            vis.add_geometry(mesh)
 
-    # start map construction
-    StartMapConstruction(url, token, map_name)
-    print(f"Map {map_name} submitted to Immersal Cloud Service")
+
+        print(f"total groups: {len(keyframe_groups)}")
+        for g in keyframe_groups:
+            
+            pcd = o3d.geometry.PointCloud()
+            xyz = []
+            
+            for kf in keyframe_groups[g]:
+                xyz.append(kf.position)
+
+            pcd.points = o3d.utility.Vector3dVector(xyz)
+            print(f"points in group {g}: {len(pcd.points)}")
+            pcd.paint_uniform_color(colorsys.hsv_to_rgb(random.uniform(0, 1), random.uniform(0.2, 0.8), 0.7))
+            vis.add_geometry(pcd)
+
+
+        vis.run()
+        vis.destroy_window()
 
 
 if __name__ == '__main__':
