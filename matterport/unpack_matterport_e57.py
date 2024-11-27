@@ -154,6 +154,10 @@ def unpack(input_path: str, separate_scans: bool = True, front_views_only: bool 
     data2d = root["images2D"]
     count = data2d.childCount()
 
+    if count == 0:
+        print("No image found.")
+        return
+
     if separate_scans:
         for i in range(0, count, 6):
             scanNmb = (i//6)+1
@@ -181,11 +185,12 @@ def unpack(input_path: str, separate_scans: bool = True, front_views_only: bool 
         for i in range(0, count):
             if (front_views_only and i%6 != 1):
                 continue
-            
+
             print(f"\nExtracting node: {i+1}/{count}")
             img = MatterportImage(data2d[i])
             img.writeImageBytes(output_directory)
             img.writeMetadata(output_directory)
+
 
 if __name__ == '__main__':
 

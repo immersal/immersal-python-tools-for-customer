@@ -97,11 +97,12 @@ def construct_map(params: MapConstructionParams) -> str:
         "token": token,
         "name": map_name,
         "preservePoses": params.preservePoses,
-        "featureCount": params.featureCount, #default: 1024
-        # "featureCountMax": 8192, #default: 8192,
-        # "featureFilter": 0, # default: 0
-        # "trackLengthMin": 2, #default: 2
-        # "triangulationDistanceMax": 512, # default: 512
+        "featureCount": params.featureCount,
+        "featureCountMax": 1280000, #default: 8192,
+        "featureFilter": 1, # default: 0
+        # "trackLengthMin": 3, #default: 2
+        "triangulationDistanceMax": 64, # default: 512
+        "nnFilter": 24,
         "dense": 0, # default: 1
     }
 
