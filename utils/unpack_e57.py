@@ -200,6 +200,10 @@ if __name__ == '__main__':
     # 4. Run the script
     # 5. Check the "out" directory generated in the same directory as the e57
 
-    input_path = r"/data/matterport/my_matterport_scan.e57"
+    input_path = r"/data/my_scan.e57"
 
-    unpack(input_path)
+    # For Matterport run this:
+    # unpack(input_path)
+
+    # For others, run this:
+    # unpack(input_path, False, False)
