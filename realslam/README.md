@@ -9,7 +9,7 @@ unpack(input_path, False, False)
 run this script to unpack e57 data.
 
 ## Step 2. Submit the result directory which contains images and camera poses(json files).
-run `submit_realslam_json.py`
+run `submit_realslam20.py` or `submit_realslam10.py`
 When it is completed, you should be able to find your map on the UI of Immersal developer portal.
 
 **Note**
