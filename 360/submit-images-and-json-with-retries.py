@@ -6,12 +6,14 @@ from natsort import natsorted   # pip install natsort
 import requests                 # pip install requests
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry  # pip install urllib3
+import signal
+import sys
 
 
 # Define a session with retry strategy
 def requests_retry_session(
-    retries=3,
-    backoff_factor=0.3,
+    retries=5,
+    backoff_factor=0.5,
     status_forcelist=(500, 502, 504, 429),
     session=None,
 ):
@@ -70,63 +72,80 @@ def SubmitImage(url: str, token: str, imagesAndPoses: List[dict], index: int) ->
 
     complete_url = url + "/capture"
 
-    with open(imagesAndPoses[index]['image'], 'rb') as imgFile:
-        img_bytes = imgFile.read()
+    try:
+        # File existence check
+        if not os.path.exists(imagesAndPoses[index]['image']):
+            return {'error': f"Image file not found: {imagesAndPoses[index]['image']}", 'imageIndex': index}
+        if not os.path.exists(imagesAndPoses[index]['pose']):
+            return {'error': f"Pose file not found: {imagesAndPoses[index]['pose']}", 'imageIndex': index}
 
-        with open(imagesAndPoses[index]['pose'], 'r') as jsonFile:
-            jsonData = json.load(jsonFile)
+        with open(imagesAndPoses[index]['image'], 'rb') as imgFile:
+            img_bytes = imgFile.read()
 
-            data = {
-                "token": token,
-                "run": 0,
-                "index": index,
-                "anchor": False,
-                "px": jsonData['px'],
-                "py": jsonData['py'],
-                "pz": jsonData['pz'],
-                "r00": jsonData['r00'],
-                "r01": jsonData['r01'],
-                "r02": jsonData['r02'],
-                "r10": jsonData['r10'],
-                "r11": jsonData['r11'],
-                "r12": jsonData['r12'],
-                "r20": jsonData['r20'],
-                "r21": jsonData['r21'],
-                "r22": jsonData['r22'],
-                "fx": jsonData['fx'],
-                "fy": jsonData['fy'],
-                "ox": jsonData['ox'],
-                "oy": jsonData['oy'],
-            }
+            with open(imagesAndPoses[index]['pose'], 'r') as jsonFile:
+                jsonData = json.load(jsonFile)
 
-            json_data = json.dumps(data)
-            json_bytes = json_data.encode()
+                # JSON data integrity validation
+                required_fields = ['px', 'py', 'pz', 'r00', 'r01', 'r02', 'r10', 'r11', 
+                                 'r12', 'r20', 'r21', 'r22', 'fx', 'fy', 'ox', 'oy']
+                missing_fields = [field for field in required_fields if field not in jsonData]
+                if missing_fields:
+                    return {'error': f"Missing fields in JSON: {missing_fields}", 'imageIndex': index}
 
-            body = json_bytes + b"\0" + img_bytes
+                data = {
+                    "token": token,
+                    "run": 0,
+                    "index": index,
+                    "anchor": False,
+                    "px": float(jsonData['px']),
+                    "py": float(jsonData['py']),
+                    "pz": float(jsonData['pz']),
+                    "r00": float(jsonData['r00']),
+                    "r01": float(jsonData['r01']),
+                    "r02": float(jsonData['r02']),
+                    "r10": float(jsonData['r10']),
+                    "r11": float(jsonData['r11']),
+                    "r12": float(jsonData['r12']),
+                    "r20": float(jsonData['r20']),
+                    "r21": float(jsonData['r21']),
+                    "r22": float(jsonData['r22']),
+                    "fx": float(jsonData['fx']),
+                    "fy": float(jsonData['fy']),
+                    "ox": float(jsonData['ox']),
+                    "oy": float(jsonData['oy']),
+                }
 
-            try:
-                r = requests_retry_session().post(complete_url, data=body, timeout=60)
-                r.raise_for_status()
-            except requests.exceptions.RequestException as e:
-                print(f"Error uploading image {index}: {e}")
-                return {'error': str(e), 'imageIndex': index}
-            
-            j = json.loads(r.text)
-            j["imageIndex"] = index
+                json_data = json.dumps(data)
+                json_bytes = json_data.encode()
 
-            return j
+                body = json_bytes + b"\0" + img_bytes
+
+                try:
+                    r = requests_retry_session().post(
+                        complete_url, 
+                        data=body, 
+                        timeout=(30, 180),
+                        headers={'Content-Type': 'application/octet-stream'}
+                    )
+                    r.raise_for_status()
+                    j = json.loads(r.text)
+                    j["imageIndex"] = index
+                    return j
+                except requests.exceptions.RequestException as e:
+                    print(f"Error uploading image {index}: {e}")
+                    if hasattr(e.response, 'text'):
+                        print(f"Server response: {e.response.text}")
+                    return {'error': str(e), 'imageIndex': index}
+
+    except Exception as e:
+        return {'error': f"Unexpected error: {str(e)}", 'imageIndex': index}
 
 
 def StartMapConstruction(url: str, token: str, mapName: str, preservePoses: bool=False) -> str:
-
-    """Returns any errors or the new map's id and size (number of images) on the Cloud Service as a JSON formatted string. Submits the map construction job for the images in the user's workspace.
-    preservePoses               Boolean to enable constraints input images' camera pose data as constraints. Speeds up map construction if input pose data is accurate
-    featureCount                Integer for the max amount of features per image. Increases the total amount of features in the map but also increases map filesize
-    featureCountMax             Maximum num of features extracted from image
-    featureFilter               Possible values 0 or 1, in scenes where there’s lots of unique details like grass, bushes, leaves, gravel etc we’d pick a lot of noisy details (high frequency features) as our top picks. These features were very hard to localize against. By using this parameter in map construction, it sorts the detected features based on size favoring large features (low frequency features). This seems to improve map construction and localization rate in high frequency environments.
-    trackLengthMin              This value represents the minimum number of images from which a feature point must originate to be kept in the map. The larger the number, the higher the reliability required for feature points, resulting in fewer points being retained and a smaller map. We usually start with a default value of 2 and gradually increase it (typically between 2 and 5), observing the success rate of positioning until it noticeably drops. At this point, the map has a sufficiently good positioning success rate while being as small as possible.
-    triangulationDistanceMax    This value represents the maximum distance to the target object for positioning, measured in meters. A value of 512 means that the system supports constructing a point cloud for an object up to 512 meters away. It's important to note that in triangulation, if your target object is far away, your baseline (the distance moved laterally) should be correspondingly increased, typically to 5%-10% of the distance. Otherwise, the point clouds for these distant objects will be unreliable. It is also important to note that sometimes constructing point clouds for distant objects is not a good idea because the accuracy of positioning decreases with distance. Therefore, you should adjust this parameter based on the actual scenario.
-    dense                       By setting this parameter to 0, it will skip the dense map and glb file generation, which can make the map construction a lot faster.
+    """Returns any errors or the new map's id and size (number of images) on the Cloud Service as a JSON formatted string. Starts the map construction job for the images in the user's workspace.
+    
+    featureCount    Integer for the max amount of features per image. Increases the total amount of features in the map but also increases map filesize
+    preservePoses   Boolean to enable constraints input images' camera pose data as constraints. Speeds up map construction if input pose data is accurate
     """
 
     complete_url = url + "/construct"
@@ -135,12 +154,22 @@ def StartMapConstruction(url: str, token: str, mapName: str, preservePoses: bool
         "token": token,
         "name": mapName,
         "preservePoses": preservePoses,
-        # "featureCount": 1024, #default: 1024
-        # "featureCountMax": 8192, #default: 8192,
-        # "featureFilter": 0, # default: 0
-        # "trackLengthMin": 2, #default: 2
-        # "triangulationDistanceMax": 512, # default: 512
-        "dense": 0, # default: 1
+
+        # By increasing these value (usually 'featureCountMax' more feature will be extracted, but it will also generate bigger map.
+        # "featureCount": 1024,
+        # "featureCountMax": 8192,
+
+        # By setting to '1' would be benefitial for high-frequency feature environemnt such as greeneries. 
+        # "featureFilter": 1,
+
+        # By increasing this number, it will leave less point (but more reliable points) in the map, so that map size can get decreased. 
+        # "trackLengthMin": 2,
+
+        # This parameter refer to the max distance of target object. You may adjust according to your environment.
+        # "triangulationDistanceMax": 64,
+
+        # by setting this parameter to 0, it will skip the dense map and glb file generation, which can make the map construction a lot faster.
+        "dense": 0,
     }
 
     json_data = json.dumps(data)
@@ -153,6 +182,13 @@ def StartMapConstruction(url: str, token: str, mapName: str, preservePoses: bool
 def main(url: str, token: str, inputDirectory: str, mapName: str, preservePoses: bool=False, maxThreads: int=1) -> None:
     """Clears the user's workspace, submits images with multithreading, and submits the map construction job to the Cloud Service"""
 
+    # Add signal handler
+    def signal_handler(signum, frame):
+        print("\nInterrupt signal detected, force stopping...")
+        sys.exit(1)
+    
+    signal.signal(signal.SIGINT, signal_handler)
+
     ClearWorkspace(url, token)
 
     jsonFiles = [os.path.join(inputDirectory, file) for file in natsorted(os.listdir(inputDirectory)) if file.endswith('.json')]
@@ -161,48 +197,90 @@ def main(url: str, token: str, inputDirectory: str, mapName: str, preservePoses:
     totalImages = len(jsonFiles)
     maxChars = len(str(totalImages))
 
+    # Supported image extensions
+    supported_extensions = ['.png', '.jpg', '.jpeg', '.PNG', '.JPG', '.JPEG']
+
     for j in jsonFiles:
         with open(j, 'r') as jsonFile:
             jsonData = json.load(jsonFile)
-            imagePath = os.path.join(inputDirectory, f"{jsonData['img']}.png")
-            # imagePath = os.path.join(inputDirectory, f"{jsonData['img']}.jpg")
-            # imagePath = os.path.join(inputDirectory, f"{jsonData['img']}.jpeg")
-            # imagePath = os.path.join(inputDirectory, f"{jsonData['img']}") #no extention name
-            x = {'image': imagePath, 'pose': j}
+            base_image_path = os.path.join(inputDirectory, jsonData['img'])
+            
+            # Try to find matching image file
+            image_path = None
+            # 1. First check if complete path image file exists
+            if os.path.exists(base_image_path):
+                image_path = base_image_path
+            else:
+                # 2. Try all supported extensions
+                for ext in supported_extensions:
+                    test_path = base_image_path + ext
+                    if os.path.exists(test_path):
+                        image_path = test_path
+                        break
+            
+            if image_path is None:
+                print(f"Warning: No supported format found for image file {jsonData['img']}")
+                continue
+                
+            x = {'image': image_path, 'pose': j}
             imagesAndPoses.append(x)
 
+    executor = None
+    try:
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=maxThreads)
+        futures = []
+        
+        # Submit all tasks
+        futures = [executor.submit(SubmitImage, url, token, imagesAndPoses, i) 
+                  for i in range(0, len(imagesAndPoses))]
+        
+        # Process results
+        for f in concurrent.futures.as_completed(futures):
+            try:
+                r = f.result(timeout=1)  # Add timeout
+                curr_i = str(r["imageIndex"]+1).zfill(maxChars)
+                print(f'{curr_i}/{totalImages}')
+                print(r)
+            except concurrent.futures.TimeoutError:
+                continue
+            except KeyboardInterrupt:
+                raise
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=maxThreads) as executor:
-        results = [executor.submit(SubmitImage, url, token, imagesAndPoses, i) for i in range(0, len(imagesAndPoses))]
+        # Only construct map after all uploads are successful
+        StartMapConstruction(url, token, mapName, preservePoses)
 
-        for f in concurrent.futures.as_completed(results):
-            r = f.result()
-
-            curr_i = str(r["imageIndex"]+1).zfill(maxChars)
-            print(f'{curr_i}/{totalImages}')
-            print(r)
-
-
-    # preservePoses turned on to speed up map construction and maintain the coordinates system from the input images
-    StartMapConstruction(url, token, mapName, preservePoses)
+    except (KeyboardInterrupt, SystemExit):
+        print("\nForce stopping all tasks...")
+        if executor:
+            executor._threads.clear()
+            concurrent.futures.thread._threads_queues.clear()
+            executor.shutdown(wait=False, cancel_futures=True)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error occurred: {str(e)}")
+        if executor:
+            executor.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        if executor and not executor._shutdown:
+            executor.shutdown(wait=False, cancel_futures=True)
 
 
 if __name__ == '__main__':
 
     # Immersal international server
     url = 'https://api.immersal.com'
-    token = "your_token"
+    token = "<your-token>"
 
     # Immersal China server
     # url = 'https://immersal.hexagon.com.cn'
-    # token = "your_token"
+    # token = "<your-token>"
 
     # Path of your frames, which should include both images and camera poses
-    # e.g. inputDirectory = "/Users/maolin/workspaces/mapping-test-202402/tripla-rect/frames"
-    inputDirectory = "path_of_frames"
+    inputDirectory = r"<your-frames-directory>"
 
     # Your map name. Please note that the map name must consist of letters or numbers (A-Z/a-z/0-9), 
     # and must not contain spaces or special characters (such as -, _, /, etc.).
-    mapName = "your_map_name"
-
+    mapName = "<your-map-name>"
+    
     main(url, token, inputDirectory, mapName, preservePoses=True, maxThreads=4)
