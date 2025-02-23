@@ -15,3 +15,5 @@ unpack(input_path)
 Check the 'main' function in the script. Specify url, token, map_name and input_directory.
 run script `submit_matterport.py`
 
+**Note**
+DO NOT run multiple submission scripts in parallel. Each execution clears the workspace for your account on the server. Running them concurrently can result in data overlap, leading to incorrect map generation.

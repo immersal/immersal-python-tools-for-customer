@@ -13,6 +13,6 @@ run `submit_realslam20.py` or `submit_realslam10.py`
 When it is completed, you should be able to find your map on the UI of Immersal developer portal.
 
 **Note**
-DO NOT run multiple submission scripts (Step 2) in parallel. Each execution clears the workspace for your account on the server. Running them concurrently can result in data overlap, leading to incorrect map generation.
+DO NOT run multiple submission scripts in parallel. Each execution clears the workspace for your account on the server. Running them concurrently can result in data overlap, leading to incorrect map generation.
 
 

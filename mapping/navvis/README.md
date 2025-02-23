@@ -2,9 +2,9 @@
 
 Check the data you get from NavVis, there are two cases:
 1. If your data is a directory containing multiple images and a csv file of camera poses, use `submit_navvis_csv.py`.
-2. If your data is a directory containing multiple images and each image has a corresponding json file of camera poses, use `submit_navvis_json.py`.
+2. If what you get is '.e57' file, you need to unpack it to a directory containing multiple images and each image has a corresponding json file of camera poses, then use `submit_navvis_json.py`.
 
-## Case 1.
+## Case 1. images + camera poses in '.csv' file
 You need to make sure the head line of the pose data(csv file) is `ID; filename; timestamp; pano_pos_x; pano_pos_y; pano_pos_z; pano_ori_w; pano_ori_x; pano_ori_y; pano_ori_z`, e.g.
 ```csv
 ID; filename; timestamp; pano_pos_x; pano_pos_y; pano_pos_z; pano_ori_w; pano_ori_x; pano_ori_y; pano_ori_z
@@ -14,8 +14,16 @@ ID; filename; timestamp; pano_pos_x; pano_pos_y; pano_pos_z; pano_ori_w; pano_or
 ```
 Then specify the image directory and the pose data file, run `submit_navvis_csv.py`.
 
-## Case 2.
-Specify the directory containing multiple images and each image has a corresponding json file of camera poses, run `submit_navvis_json.py`.
+## Case 2. '.e57' file
+open https://github.com/immersal/immersal-python-tools-for-customer/tree/main/utils/unpack_e57.py, make sure to enable this line:
+```python
+#For others, run this:
+unpack(input_path, False, False)
+```
+
+Then you will get a directory containing multiple images and each image has a corresponding json file of camera poses. 
+
+Specify the directory in `submit_navvis_json.py` and run it.
 
 **Note**
 DO NOT run multiple submission scripts in parallel. Each execution clears the workspace for your account on the server. Running them concurrently can result in data overlap, leading to incorrect map generation.
