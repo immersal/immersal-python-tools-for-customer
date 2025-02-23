@@ -1,7 +1,9 @@
-# Hexagon XGRID Scanner
+# XGRID Scanner
+
+Compatible with XGRID K1, L2 scanners.
 
 ## Step 1. Check the pose data
-You need to make sure the head line of the pose data is `# timestamp imgname TX TY TZ QX QY QZ QW`, e.g.
+You need to make sure the head line of the pose data(csv file) is `# timestamp imgname TX TY TZ QX QY QZ QW`, e.g.
 ```csv
 # timestamp imgname TX TY TZ QX QY QZ QW
 1736408017.628399 pano/1736408017.628399.jpg 0.503564 -0.650374 0.836759 -0.657117 0.248333 -0.185543 0.687096
