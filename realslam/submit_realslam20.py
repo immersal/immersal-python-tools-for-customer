@@ -307,7 +307,7 @@ def main(directory: str, url: str, token: str, map_name: str) -> None:
     # prepare all data
     data_list = parse_trajectory_json(directory)
     data_list = append_data_with_image_path(data_list, directory)
-    data_list = set_root_to_origin(data_list)
+    # data_list = set_root_to_origin(data_list)
 
     # clear workspace, submit images, start map construction
     submit_job(data_list, url, token, map_name)
