@@ -192,7 +192,7 @@ def StartMapConstruction(url: str, token: str, mapName: str) -> str:
     preservePoses               Boolean to enable constraints input images' camera pose data as constraints. Speeds up map construction if input pose data is accurate
     featureCount                Integer for the max amount of features per image. Increases the total amount of features in the map but also increases map filesize
     featureCountMax             Maximum num of features extracted from image
-    featureFilter               Possible values 0 or 1, in scenes where there’s lots of unique details like grass, bushes, leaves, gravel etc we’d pick a lot of noisy details (high frequency features) as our top picks. These features were very hard to localize against. By using this parameter in map construction, it sorts the detected features based on size favoring large features (low frequency features). This seems to improve map construction and localization rate in high frequency environments.
+    featureFilter               Possible values 0 or 1, in scenes where there's lots of unique details like grass, bushes, leaves, gravel etc we'd pick a lot of noisy details (high frequency features) as our top picks. These features were very hard to localize against. By using this parameter in map construction, it sorts the detected features based on size favoring large features (low frequency features). This seems to improve map construction and localization rate in high frequency environments.
     trackLengthMin              This value represents the minimum number of images from which a feature point must originate to be kept in the map. The larger the number, the higher the reliability required for feature points, resulting in fewer points being retained and a smaller map. We usually start with a default value of 2 and gradually increase it (typically between 2 and 5), observing the success rate of positioning until it noticeably drops. At this point, the map has a sufficiently good positioning success rate while being as small as possible.
     triangulationDistanceMax    This value represents the maximum distance to the target object for positioning, measured in meters. A value of 512 means that the system supports constructing a point cloud for an object up to 512 meters away. It's important to note that in triangulation, if your target object is far away, your baseline (the distance moved laterally) should be correspondingly increased, typically to 5%-10% of the distance. Otherwise, the point clouds for these distant objects will be unreliable. It is also important to note that sometimes constructing point clouds for distant objects is not a good idea because the accuracy of positioning decreases with distance. Therefore, you should adjust this parameter based on the actual scenario.
     dense                       By setting this parameter to 0, it will skip the dense map and glb file generation, which can make the map construction a lot faster.
@@ -219,7 +219,7 @@ def StartMapConstruction(url: str, token: str, mapName: str) -> str:
     return r.text
 
 
-def SubmitImage(url: str, token: str, keyframe_list: List[dict], index: int) -> str:
+def SubmitImage(url: str, token: str, keyframe_list: List[dict], index: int, use_first_image_as_anchor: bool=True) -> str:
     """Returns any errors or the path of the submitted image in the Cloud Service as a JSON formatted string. Submits an image to the user's workspace. Binary version of the endpoint for faster image uploads.
 
     Takes in a list of dictionaries containing all image data needed to submit them.
@@ -248,7 +248,7 @@ def SubmitImage(url: str, token: str, keyframe_list: List[dict], index: int) -> 
         "token": token,
         "run": 0,
         "index": index,
-        "anchor": False,
+        "anchor": (index == 0) if use_first_image_as_anchor else False,
         "px": keyframe.position[0],
         "py": keyframe.position[1],
         "pz": keyframe.position[2],
@@ -335,7 +335,7 @@ def split_to_groups(input_keyframes: list[Keyframe], k: int=1):
     return groups, centroids
 
 
-def main(url: str, token: str, map_name: str, input_directory: str, skip_submission: bool=False, visualize_poses: bool=True, coordinate_frame_size: float=0.25, split_groups: int=1, max_threads: int=4):
+def main(url: str, token: str, map_name: str, input_directory: str, skip_submission: bool=False, visualize_poses: bool=True, coordinate_frame_size: float=0.25, centroid_frame_size: float=1.0, split_groups: int=1, max_threads: int=4, use_first_image_pose_as_origo: bool=False):
 
     polycam_scan = PolycamScanArchive(input_directory)
 
@@ -361,7 +361,7 @@ def main(url: str, token: str, map_name: str, input_directory: str, skip_submiss
             ClearWorkspace(url, token)
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_threads) as executor:
-                results = [executor.submit(SubmitImage, url, token, keyframe_groups[g], i) for i in range(0, len(keyframe_groups[g]))]
+                results = [executor.submit(SubmitImage, url, token, keyframe_groups[g], i, use_first_image_pose_as_origo) for i in range(0, len(keyframe_groups[g]))]
 
                 for f in concurrent.futures.as_completed(results):
                     print(f.result())
@@ -374,26 +374,114 @@ def main(url: str, token: str, map_name: str, input_directory: str, skip_submiss
     if visualize_poses:
         vis = SetupVisualizer()
 
-        for c in centroids.values():
-            mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=1, origin=[0, 0, 0])
-            mesh.translate(c)
-            vis.add_geometry(mesh)
-
+        # Determine what to display as the origin reference based on use_first_image_pose_as_origo parameter
+        if use_first_image_pose_as_origo:
+            # Display the first camera position as the origin reference
+            for g in keyframe_groups:
+                first_camera = keyframe_groups[g][0]
+                first_position = first_camera.position
+                mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=centroid_frame_size, origin=[0, 0, 0])
+                mesh.translate(first_position)
+                vis.add_geometry(mesh)
+                print(f"Using first camera position {first_position} as origin")
+        else:
+            # Display the group center points as reference
+            for c in centroids.values():
+                mesh = o3d.geometry.TriangleMesh.create_coordinate_frame(size=centroid_frame_size, origin=[0, 0, 0])
+                mesh.translate(c)
+                vis.add_geometry(mesh)
+                print(f"Using center point {c} as origin")
 
         print(f"total groups: {len(keyframe_groups)}")
         for g in keyframe_groups:
+            # Assign different colors to coordinate systems for each group
+            group_color = colorsys.hsv_to_rgb(random.uniform(0, 1), random.uniform(0.2, 0.8), 0.7)
             
+            # Get all camera positions in this group for creating paths later
+            camera_positions = []
+            
+            # Display complete pose (position and orientation) for each camera
+            camera_count = len(keyframe_groups[g])
+            for i, kf in enumerate(keyframe_groups[g]):
+                # Create coordinate system
+                camera_frame = o3d.geometry.TriangleMesh.create_coordinate_frame(size=coordinate_frame_size, origin=[0, 0, 0])
+                
+                # Build camera transformation matrix (4x4)
+                T = np.array([
+                    [kf.rotation[0], kf.rotation[1], kf.rotation[2], kf.position[0]],
+                    [kf.rotation[3], kf.rotation[4], kf.rotation[5], kf.position[1]],
+                    [kf.rotation[6], kf.rotation[7], kf.rotation[8], kf.position[2]],
+                    [0,              0,              0,              1              ]
+                ])
+                
+                # Apply transformation
+                camera_frame.transform(T)
+                
+                # Add to visualizer
+                vis.add_geometry(camera_frame)
+                
+                # Save camera position for path creation
+                camera_positions.append(kf.position)
+                
+                # Add sequence number labels
+                # Note: Open3D doesn't directly support adding text labels, so we create a small sphere to represent the number
+                # Use different colors for start and end points
+                sphere = o3d.geometry.TriangleMesh.create_sphere(radius=coordinate_frame_size * 0.5)
+                sphere.translate(kf.position)
+                
+                # Start point: green, end point: red, others: white
+                if i == 0:  # start point
+                    sphere.paint_uniform_color([0, 1, 0])  # green
+                elif i == camera_count - 1:  # end point
+                    sphere.paint_uniform_color([1, 0, 0])  # red
+                else:
+                    sphere.paint_uniform_color([1, 1, 1])  # white
+                
+                vis.add_geometry(sphere)
+                
+                # Display sequence information (camera index) using Open3D's simple rendering functionality
+                # Note: For actual text labels, you might need other libraries like Matplotlib
+                print(f"Camera {i} position: {kf.position}")
+            
+            # Create lines connecting camera positions to show movement path
+            if len(camera_positions) > 1:
+                line_points = []
+                line_indices = []
+                
+                # Create line segments connecting points
+                for i in range(len(camera_positions)-1):
+                    line_points.append(camera_positions[i])
+                    line_points.append(camera_positions[i+1])
+                    line_indices.append([i*2, i*2+1])
+                
+                line_set = o3d.geometry.LineSet()
+                line_set.points = o3d.utility.Vector3dVector(line_points)
+                line_set.lines = o3d.utility.Vector2iVector(line_indices)
+                
+                # Set line color to yellow for visibility
+                colors = [[1, 1, 0] for _ in range(len(line_indices))]  # yellow
+                line_set.colors = o3d.utility.Vector3dVector(colors)
+                
+                vis.add_geometry(line_set)
+            
+            # Also display point cloud for comparison
             pcd = o3d.geometry.PointCloud()
             xyz = []
-            
             for kf in keyframe_groups[g]:
                 xyz.append(kf.position)
-
             pcd.points = o3d.utility.Vector3dVector(xyz)
-            print(f"points in group {g}: {len(pcd.points)}")
-            pcd.paint_uniform_color(colorsys.hsv_to_rgb(random.uniform(0, 1), random.uniform(0.2, 0.8), 0.7))
+            pcd.paint_uniform_color(group_color)
             vis.add_geometry(pcd)
 
+        # Add legend explanation (console output)
+        print("\nCamera path visualization explanation:")
+        print("- Green sphere: Starting point (Camera 1)")
+        print("- Red sphere: End point (Last camera)")
+        print("- White spheres: Intermediate camera positions")
+        print("- Yellow lines: Camera movement path")
+        print("- Colored point cloud: Camera position overview")
+        print("- Small coordinate systems: Position and orientation of each camera")
+        print("- Large coordinate system: Group center point")
 
         vis.run()
         vis.destroy_window()
@@ -412,20 +500,20 @@ if __name__ == '__main__':
 
     # Immersal international server
     url = 'https://api.immersal.com'
-    token = "your_token"
+    token = "<your_token>"
 
     # Immersal China server
     # url = 'https://immersal.hexagon.com.cn'
     # token = "your_token"
 
-    # Path of the input directory, which is the root directory of Polycam export, which is the parant 
+    # Path of the input directory, which is the root directory of Polycam export, which is the parent 
     # directory of folder 'keyframes'
     # e.g. /home/maolin/workspace/mapping-data-polycam/garden/Sep1at10-00AM
-    input_directory = "path_of_polycam_export"
+    input_directory = "<your_input_directory>"
 
     # Your map name. Please note that the map name must consist of letters or numbers (A-Z/a-z/0-9), 
     # and must not contain spaces or special characters (such as -, _, /, etc.).
-    map_name = "your_map_name"
+    map_name = "<your_map_name>"
 
-    main(url, token, map_name, input_directory)
+    main(url, token, map_name, input_directory, visualize_poses=True, coordinate_frame_size=0.1, centroid_frame_size=0.5, split_groups=1, max_threads=4, use_first_image_pose_as_origo=False)
 
