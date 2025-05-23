@@ -121,7 +121,6 @@ def encodeFilename(data: dict) -> str:
 
     return f"hxyz_{run}_{ih}_{px}_{py}_{pz}_{fx}_{fy}_{ox}_{oy}_{rh}_{ra}_{rb}_{latitude_ll}_{longitude_ll}_{altitude_ll}"
 
-
 def process(input_directory: str) -> None:
 
     if not os.path.exists(input_directory):
@@ -136,13 +135,23 @@ def process(input_directory: str) -> None:
     images_and_data = []
 
     for j in json_files:
+        if not os.path.exists(j):
+            print(f"Skipping missing JSON file: {j}")
+            continue
         with open(j, 'r') as json_file:
-            json_data = json.load(json_file)
+            try:
+                json_data = json.load(json_file)
+            except json.JSONDecodeError:
+                print(f"Skipping invalid JSON file: {j}")
+                continue
             image_path = os.path.join(os.path.dirname(j), f"{json_data['imagePath']}")
-            x = {'image': image_path, 'data': json_data}
+            if not os.path.exists(image_path):
+                print(f"Skipping missing image: {image_path}")
+                continue
+            x = {'image': image_path, 'data': json_data, 'json': j}
             images_and_data.append(x)
 
-    print(f"Found {len(images_and_data)} pairs")
+    print(f"Found {len(images_and_data)} valid image/JSON pairs")
 
     for pair in images_and_data:
         data = pair["data"]
@@ -181,9 +190,21 @@ def process(input_directory: str) -> None:
         encoded_fn = encodeFilename(data)
 
         dir = os.path.dirname(pair["image"])
-        img, ext = os.path.splitext(pair["image"])
-        newname = f"{dir}{os.path.sep}{encoded_fn}{ext}"
-        os.rename(pair["image"], newname)
+        _, ext = os.path.splitext(pair["image"])
+        new_image_path = f"{dir}{os.path.sep}{encoded_fn}{ext}"
+        new_json_path = f"{dir}{os.path.sep}{encoded_fn}.json"
+
+        if os.path.exists(pair["image"]) and not os.path.exists(new_image_path):
+            os.rename(pair["image"], new_image_path)
+            print(f"Renamed image: {os.path.basename(pair['image'])} → {os.path.basename(new_image_path)}")
+        else:
+            print(f"Warning: Skipping image rename (already exists or missing): {new_image_path}")
+
+        if os.path.exists(pair["json"]) and not os.path.exists(new_json_path):
+            os.rename(pair["json"], new_json_path)
+            print(f"Renamed JSON: {os.path.basename(pair['json'])} → {os.path.basename(new_json_path)}")
+        else:
+            print(f"Warning: Skipping JSON rename (already exists or missing): {new_json_path}")
 
 if __name__ == '__main__':
 
